@@ -15,6 +15,16 @@ static __always_inline __s8 Create_packet_content(struct Packet_content *ctx) {
         return BAD_PACKET;
     }
    __u32 gtp_result = Parse_gtp_header(ctx);
+   if (!gtp_result) {
+       return DOWNLINK_FLOW;
+       }
+    else if (gtp_result == GTPU_G_PDU)
+    {
+        return UPLINK_FLOW;
+    }
+     else {
+        return NON_FLOW;
+    }
 
 }
 
@@ -32,10 +42,37 @@ static __always_inline __u16 Handle_downlink_packet(struct Packet_content *ctx) 
         bpf_printk("Hexa: IPV4 parsing error");
         return XDP_DROP;
     }
+
+
     struct PDR *PDR_content = bpf_map_lookup_elem(&PDR_downlink_map, &ctx->ip4->daddr);
     if (!PDR_content) {
         bpf_printk("Hexa: NO downlink session found for IP:%d", ctx->ip4->daddr);
         return XDP_PASS;
+    }
+    
+    struct FAR *Far_content = bpf_map_lookup_elem(&FAR_map, &PDR_content->Far_id);
+
+
+
+    switch (Far_content->Action) {
+        case FAR_FORW:{
+            struct QER *Qer_content = bpf_map_lookup_elem(&QER_map, &PDR_content->Qer_id);
+            if (!Qer_content) {
+                bpf_printk("Hexa: QER not found for TEID:%d Qer_ID:%d",Far_content->TEID, PDR_content->Qer_id);
+                return XDP_DROP;
+            }
+            if (Qer_content->ULGate_status != GATE_OPEN)
+                return XDP_DROP;
+            if (Far_content->OHC == 1) {
+                return Send_downlink_ipv4_packet(ctx, Far_content->Localip, Far_content->Remoteip, Qer_content->Qfi, Far_content->TEID);            }
+        }
+        case FAR_DROP:
+            return XDP_DROP;
+        case FAR_BUFF:
+            //TO DO handle buffer action
+            return Handle_buffer_action(ctx, Far_content, PDR_content);
+        default:
+            return XDP_DROP;
     }
     
 }
