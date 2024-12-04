@@ -9,6 +9,11 @@
 #include <linux/udp.h>
 #include <sys/socket.h>
 
+#define UPLINK_FLOW       1
+#define DOWNLINK_FLOW     0
+#define NON_FLOW          2
+#define BAD_PACKET       -1
+
 static __always_inline __s8 Create_packet_content(struct Packet_content *ctx) {
     __u32 eth_result = Parse_ethernet_header(ctx);
     if (!eth_result) {
@@ -74,5 +79,27 @@ static __always_inline __u16 Handle_downlink_packet(struct Packet_content *ctx) 
         default:
             return XDP_DROP;
     }
+    
+}
+
+SEC("xdp/Hexa_datapath_entrypoint")
+int Hexa_datapath_entrypoint(struct xdp_md *ctx) {
+
+    struct Packet_content Packet_content = {
+        .data = (char *)(long)ctx->data,
+        .data_end = (const char *)(long)ctx->data_end,
+        .xdp_ctx = ctx,};
+
+
+    __s8 Packetflow_direction = Create_packet_content(&Packet_content);
+    if (Packetflow_direction == BAD_PACKET) {
+        return XDP_DROP;
+    }else if (Packetflow_direction == DOWNLINK_FLOW)
+    {
+        return Handle_downlink_packet(&Packet_content);
+    }else if (Packetflow_direction == UPLINK_FLOW){
+        return Handle_uplink_gtpu_packet(&Packet_content);
+    }else {
+        return XDP_PASS;    }
     
 }
