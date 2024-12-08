@@ -82,6 +82,58 @@ static __always_inline __u16 Handle_downlink_packet(struct Packet_content *ctx) 
     
 }
 
+static __always_inline enum xdp_action IPV4_PDU_handler(struct Packet_content *ctx) {
+    int parsing_result = Parse_ipv4_header(ctx);
+    if (parsing_result == PARSER_ERROR) {
+        bpf_printk("Hexa: IPV4 parsing error");
+        return XDP_DROP;
+    }
+    __u32 TEID = bpf_htonl(ctx->gtp->teid);
+    struct PDR *PDR_content = bpf_map_lookup_elem(&PDR_uplink_map, &TEID);
+    if (!PDR_content) {
+        bpf_printk("Hexa: Unknown TEID:%d No session found in PDR", TEID);
+        return XDP_PASS;
+    }
+
+    
+    struct FAR *Far_content = bpf_map_lookup_elem(&FAR_map, &PDR_content->Far_id);
+    if (!Far_content) {
+        bpf_printk("Hexa: FAR not found for TEID:%d Far_ID:%d", TEID, PDR_content->Far_id);
+        return XDP_DROP;
+    }
+
+    switch (Far_content->Action) {
+        case FAR_FORW:{
+            struct QER *Qer_content = bpf_map_lookup_elem(&QER_map, &PDR_content->Qer_id);
+            if (!Qer_content) {
+                bpf_printk("Hexa: QER not found for TEID:%d Qer_ID:%d", TEID, PDR_content->Qer_id);
+                return XDP_DROP;
+            }
+            if (Qer_content->ULGate_status != GATE_OPEN)
+                return XDP_DROP;
+            if (PDR_content->OHR == 1) {
+                int r = Remove_gtp_header(ctx);
+            }
+            
+            return Route_uplink_ipv4_packet(ctx->xdp_ctx, ctx->eth, ctx->ip4);
+            }
+        case FAR_DROP:
+            return XDP_DROP;
+        case FAR_BUFF:
+            return Handle_buffer_action(ctx, Far_content, PDR_content);
+        default:
+            return XDP_DROP;
+    }
+
+        
+}
+
+static __always_inline enum xdp_action IPV6_PDU_handler(struct Packet_content *ctx) {
+    //TODO handle IPV6
+    return XDP_PASS;
+}
+
+
 SEC("xdp/Hexa_datapath_entrypoint")
 int Hexa_datapath_entrypoint(struct xdp_md *ctx) {
 
