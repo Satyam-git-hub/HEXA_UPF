@@ -40,6 +40,11 @@ static __always_inline enum xdp_action Send_downlink_ipv4_packet(struct Packet_c
     return Route_downlink_ipv4_packet(ctx->xdp_ctx, ctx->eth, ctx->ip4);
 }
 
+static __always_inline enum xdp_action Ethernet_PDU_Handler(struct Packet_content *ctx) {
+    //TO DO handle vlan packets
+    return XDP_PASS;
+}
+
 static __always_inline __u16 Handle_downlink_packet(struct Packet_content *ctx) {
     //TO DO handle different header types
     int parsing_result = Parse_ipv4_header(ctx);
@@ -128,10 +133,27 @@ static __always_inline enum xdp_action IPV4_PDU_handler(struct Packet_content *c
         
 }
 
+static __always_inline enum xdp_action Handle_uplink_gtpu_packet(struct Packet_content *ctx) {
+   int pdutype = Parse_ethernet_header(ctx);
+   switch (pdutype) {
+       case ETH_P_IP:
+           return IPV4_PDU_handler(ctx);
+       case ETH_P_IPV6:
+           return IPV6_PDU_handler(ctx);
+       case ETH_P_8021Q:
+           return Ethernet_PDU_handler(ctx);
+       default:
+           return XDP_DROP;
+   }
+   
+}
+
+
 static __always_inline enum xdp_action IPV6_PDU_handler(struct Packet_content *ctx) {
     //TODO handle IPV6
     return XDP_PASS;
 }
+
 
 
 SEC("xdp/Hexa_datapath_entrypoint")
